@@ -1,0 +1,255 @@
+You are a senior full-stack engineer building a high-performance, production-thinking Farm-to-Market Intelligence Platform (Farmer Side).
+
+The application must be fast, mobile-first, simple for farmers, and hackathon-ready.
+
+CORE REQUIREMENTS
+
+Application must load fast
+
+UX must be farmer-friendly
+
+Units must be kilograms only
+
+Crop/vegetable names must be simple (no scientific names)
+
+Focus on decision-making, not heavy ML
+
+AUTHENTICATION (VERY IMPORTANT)
+Login / Signup Flow
+Login Page
+
+User can login using:
+
+Google Account
+
+Full Name OR Email + Password
+
+Google Login Behavior
+
+If Google account email exists in database → login
+
+If Google account email does NOT exist → auto-signup
+
+Google login must work on both login and signup pages
+
+Signup Page
+
+Signup options:
+
+Google Login
+
+Manual signup:
+
+Full Name
+
+Email
+
+Password
+
+Confirm Password
+
+After signup → redirect to dashboard
+
+UI THEMES
+
+White Mode
+
+AMOLED Dark Mode (pure black background)
+
+Theme toggle must be available globally
+
+Theme preference stored per user
+
+HOME DASHBOARD (FIRST SCREEN)
+Profit Dashboard (Top Section)
+
+Show profit summary with time filters:
+
+1 day
+
+1 month
+
+5 months
+
+1 year
+
+Max
+
+Custom date range (start → end)
+
+Profit may be 0 for new users.
+
+TOP 10 PERFORMING MARKETS
+
+Display as dropdown list
+
+Ranking Logic
+
+If farmer has past interaction data:
+
+Rank markets based on farmer’s historical market data
+
+If farmer has no data:
+
+Rank markets by highest selling price
+
+Market Selection View
+
+Show single line graph only
+
+Time filters:
+
+1 day / 1 month / 5 months / 1 year / Max
+
+Highlight:
+
+Highest price
+
+Lowest price
+
+Below graph show:
+
+Highest price
+
+Lowest price
+
+Average price
+
+ADD CROP DETAILS (TOP BUTTON)
+
+Inputs:
+
+Farmer location
+
+Crop / vegetable type (multiple allowed)
+
+Weight (kg)
+
+Harvest date (optional; default = current date)
+
+ANALYZE BUTTON
+If no input provided
+
+Show general market opportunities
+
+If input exists
+
+Calculate:
+
+Transport cost (simple distance-based)
+
+Spoilage risk
+
+Expected profit
+
+Rank all markets from best to worst
+
+MARKET DETAILS VIEW
+
+When farmer selects a market:
+
+Show:
+
+Farmer location
+
+Market location
+
+Transport cost
+
+Spoilage risk
+
+Expected profit
+
+MAP INTEGRATION (OPEN SOURCE ONLY)
+
+Use OpenStreetMap
+
+Use Leaflet.js to render maps
+
+Use OpenRouteService or OSRM for routing
+
+Map Requirements:
+
+Show default route from farmer → market
+
+Buttons:
+
+“Open in Maps” → redirect using OpenStreetMap routing URL
+
+“Confirm”
+
+CONFIRM MARKET FLOW
+
+On clicking Confirm:
+
+Remove market from Analyze page
+
+Add market to Confirmed Markets
+
+Automatically redirect to Confirmed Markets page
+
+CONFIRMED MARKETS PAGE
+
+Show same details as Analyze view
+
+Include map
+
+Status: Confirmed
+
+NOTIFICATIONS
+
+System should automatically notify farmer:
+
+High demand in confirmed markets
+
+Price rise alerts
+
+BACKEND REQUIREMENTS
+
+REST APIs
+
+JWT authentication
+
+OAuth 2.0 (Google)
+
+PostgreSQL database
+
+Core APIs
+
+Auth (login/signup/google)
+
+Farmer profile
+
+Market list
+
+Market price history (time-series)
+
+Analyze markets
+
+Confirm market
+
+Notifications
+
+Market Demand Window
+
+Each demand has:
+
+Crop
+
+Price
+
+Validity window (e.g., 5 days)
+
+Expire automatically after window ends
+
+PERFORMANCE & QUALITY
+
+Use fast programming languages and frameworks
+
+Optimize DB queries
+
+Use indexing in PostgreSQL
+
+Keep code modular and readable
+
+Mock data allowed for demo
