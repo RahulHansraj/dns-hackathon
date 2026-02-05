@@ -31,5 +31,8 @@ module.exports = {
     const [rows] = await pool.execute(text, params);
     return { rows };
   },
+  execute: async (text, params) => {
+    return await pool.execute(text, params);
+  },
   pool
 };
