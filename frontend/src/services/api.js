@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'https://dns-hackathon-backend.azurewebsites.net/api';
+const API_BASE_URL = 'https://dns-cge2fzerc7gjahc3.canadacentral-01.azurewebsites.net/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
