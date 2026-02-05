@@ -9,15 +9,15 @@ exports.getCrops = async (req, res) => {
     let params = [];
     
     if (category) {
-      query += ' WHERE category = $1';
+      query += ' WHERE category = ?';
       params.push(category);
     }
     
     query += ' ORDER BY name';
     
-    const result = await db.query(query, params);
+    const result = await db.execute(query, params);
     
-    res.json(result.rows.map(row => ({
+    res.json(result[0].map(row => ({
       id: row.id,
       name: row.name,
       category: row.category,
@@ -32,11 +32,11 @@ exports.getCrops = async (req, res) => {
 // Get crop categories
 exports.getCategories = async (req, res) => {
   try {
-    const result = await db.query(
+    const result = await db.execute(
       'SELECT DISTINCT category FROM crops ORDER BY category'
     );
     
-    res.json(result.rows.map(row => row.category));
+    res.json(result[0].map(row => row.category));
   } catch (error) {
     console.error('Get categories error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -52,16 +52,16 @@ exports.searchCrops = async (req, res) => {
       return res.status(400).json({ error: 'Search query required' });
     }
     
-    const result = await db.query(
+    const result = await db.execute(
       `SELECT id, name, category, shelf_life_days 
        FROM crops 
-       WHERE name ILIKE $1 
+       WHERE name LIKE ? 
        ORDER BY name 
        LIMIT 20`,
       [`%${q}%`]
     );
     
-    res.json(result.rows.map(row => ({
+    res.json(result[0].map(row => ({
       id: row.id,
       name: row.name,
       category: row.category,

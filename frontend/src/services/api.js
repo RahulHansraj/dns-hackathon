@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const API_BASE_URL = 'https://dns-hackathon-backend.azurewebsites.net/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -35,7 +35,6 @@ api.interceptors.response.use(
 export const authAPI = {
   login: (email, password) => api.post('/auth/login', { email, password }),
   signup: (fullName, email, password) => api.post('/auth/signup', { fullName, email, password }),
-  googleAuth: (credential) => api.post('/auth/google', { credential }),
   me: () => api.get('/auth/me'),
   updateTheme: (theme) => api.put('/auth/theme', { theme }),
 };

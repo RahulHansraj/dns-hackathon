@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { Eye, EyeOff, Mail, Lock, User, Loader2, Sun, Moon } from 'lucide-react';
@@ -16,7 +15,7 @@ export default function Signup() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { signup, googleLogin } = useAuth();
+  const { signup } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -43,22 +42,6 @@ export default function Signup() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleGoogleSuccess = async (credentialResponse) => {
-    try {
-      setLoading(true);
-      await googleLogin(credentialResponse.credential);
-      navigate('/');
-    } catch (err) {
-      setError(t('auth.googleSignupFailed'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleError = () => {
-    setError(t('auth.googleSignupFailed'));
   };
 
   const { theme, toggleTheme } = useTheme();
@@ -184,27 +167,6 @@ export default function Signup() {
               )}
             </button>
           </form>
-
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300 dark:border-gray-700"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white dark:bg-amoled-card text-gray-500">{t('auth.orContinueWith')}</span>
-            </div>
-          </div>
-
-          <div className="flex justify-center">
-            <GoogleLogin
-              onSuccess={handleGoogleSuccess}
-              onError={handleGoogleError}
-              useOneTap
-              theme="outline"
-              size="large"
-              width="100%"
-              text="signup_with"
-            />
-          </div>
 
           <p className="mt-6 text-center text-gray-600 dark:text-gray-400">
             {t('auth.haveAccount')}{' '}

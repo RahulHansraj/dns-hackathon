@@ -54,18 +54,6 @@ export function AuthProvider({ children }) {
     return user;
   };
 
-  const googleLogin = async (credential) => {
-    const res = await authAPI.googleAuth(credential);
-    const { token, user } = res.data;
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-    setUser(user);
-    if (user.themePreference) {
-      setTheme(user.themePreference);
-    }
-    return res.data;
-  };
-
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -84,7 +72,6 @@ export function AuthProvider({ children }) {
       loading, 
       login, 
       signup, 
-      googleLogin, 
       logout,
       updateUser,
       isAuthenticated: !!user 

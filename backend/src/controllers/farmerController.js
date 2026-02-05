@@ -3,20 +3,20 @@ const db = require('../database/db');
 // Get farmer profile
 exports.getProfile = async (req, res) => {
   try {
-    const result = await db.query(
+    const result = await db.execute(
       `SELECT f.id, f.location_name, f.latitude, f.longitude,
               u.full_name, u.email, u.theme_preference
        FROM farmers f
        JOIN users u ON u.id = f.user_id
-       WHERE u.id = $1`,
+       WHERE u.id = ?`,
       [req.user.id]
     );
     
-    if (result.rows.length === 0) {
+    if (result[0].length === 0) {
       return res.status(404).json({ error: 'Farmer profile not found' });
     }
     
-    const farmer = result.rows[0];
+    const farmer = result[0][0];
     
     res.json({
       id: farmer.id,
@@ -40,10 +40,10 @@ exports.updateLocation = async (req, res) => {
   try {
     const { locationName, latitude, longitude } = req.body;
     
-    await db.query(
+    await db.execute(
       `UPDATE farmers 
-       SET location_name = $1, latitude = $2, longitude = $3, updated_at = NOW()
-       WHERE user_id = $4`,
+       SET location_name = ?, latitude = ?, longitude = ?, updated_at = NOW()
+       WHERE user_id = ?`,
       [locationName, latitude, longitude, req.user.id]
     );
     
@@ -63,27 +63,26 @@ exports.addCrop = async (req, res) => {
     const { cropId, weightKg, harvestDate } = req.body;
     
     // Get farmer id
-    const farmerResult = await db.query(
-      'SELECT id FROM farmers WHERE user_id = $1',
+    const farmerResult = await db.execute(
+      'SELECT id FROM farmers WHERE user_id = ?',
       [req.user.id]
     );
     
-    if (farmerResult.rows.length === 0) {
+    if (farmerResult[0].length === 0) {
       return res.status(404).json({ error: 'Farmer profile not found' });
     }
     
-    const farmerId = farmerResult.rows[0].id;
+    const farmerId = farmerResult[0][0].id;
     
-    const result = await db.query(
+    const result = await db.execute(
       `INSERT INTO farmer_crops (farmer_id, crop_id, weight_kg, harvest_date)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id`,
+       VALUES (?, ?, ?, ?)`,
       [farmerId, cropId, weightKg, harvestDate || new Date()]
     );
     
     res.status(201).json({
       message: 'Crop added',
-      id: result.rows[0].id
+      id: result[0].insertId
     });
   } catch (error) {
     console.error('Add crop error:', error);
@@ -94,18 +93,18 @@ exports.addCrop = async (req, res) => {
 // Get farmer's crops
 exports.getCrops = async (req, res) => {
   try {
-    const result = await db.query(
+    const result = await db.execute(
       `SELECT fc.id, fc.weight_kg, fc.harvest_date, fc.created_at,
               c.id as crop_id, c.name as crop_name, c.category, c.shelf_life_days
        FROM farmer_crops fc
        JOIN crops c ON c.id = fc.crop_id
        JOIN farmers f ON f.id = fc.farmer_id
-       WHERE f.user_id = $1
+       WHERE f.user_id = ?
        ORDER BY fc.created_at DESC`,
       [req.user.id]
     );
     
-    res.json(result.rows.map(row => ({
+    res.json(result[0].map(row => ({
       id: row.id,
       cropId: row.crop_id,
       cropName: row.crop_name,
@@ -126,9 +125,9 @@ exports.deleteCrop = async (req, res) => {
   try {
     const { id } = req.params;
     
-    await db.query(
+    await db.execute(
       `DELETE FROM farmer_crops 
-       WHERE id = $1 AND farmer_id IN (SELECT id FROM farmers WHERE user_id = $2)`,
+       WHERE id = ? AND farmer_id IN (SELECT id FROM farmers WHERE user_id = ?)`,
       [id, req.user.id]
     );
     
@@ -155,50 +154,50 @@ exports.getProfitSummary = async (req, res) => {
     } else {
       switch (period) {
         case '1d':
-          dateFilter = "AND cm.confirmed_at >= NOW() - INTERVAL '1 day'";
-          historyInterval = "NOW() - INTERVAL '1 day'";
+          dateFilter = "AND cm.confirmed_at >= DATE_SUB(NOW(), INTERVAL 1 DAY)";
+          historyInterval = "DATE_SUB(NOW(), INTERVAL 1 DAY)";
           break;
         case '1m':
-          dateFilter = "AND cm.confirmed_at >= NOW() - INTERVAL '1 month'";
-          historyInterval = "NOW() - INTERVAL '1 month'";
+          dateFilter = "AND cm.confirmed_at >= DATE_SUB(NOW(), INTERVAL 1 MONTH)";
+          historyInterval = "DATE_SUB(NOW(), INTERVAL 1 MONTH)";
           break;
         case '5m':
-          dateFilter = "AND cm.confirmed_at >= NOW() - INTERVAL '5 months'";
-          historyInterval = "NOW() - INTERVAL '5 months'";
+          dateFilter = "AND cm.confirmed_at >= DATE_SUB(NOW(), INTERVAL 5 MONTH)";
+          historyInterval = "DATE_SUB(NOW(), INTERVAL 5 MONTH)";
           break;
         case '1y':
-          dateFilter = "AND cm.confirmed_at >= NOW() - INTERVAL '1 year'";
-          historyInterval = "NOW() - INTERVAL '1 year'";
+          dateFilter = "AND cm.confirmed_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)";
+          historyInterval = "DATE_SUB(NOW(), INTERVAL 1 YEAR)";
           break;
         case 'max':
         default:
           dateFilter = '';
-          historyInterval = "NOW() - INTERVAL '5 years'";
+          historyInterval = "DATE_SUB(NOW(), INTERVAL 5 YEAR)";
       }
     }
     
     // Get summary
-    const result = await db.query(
+    const result = await db.execute(
       `SELECT 
          COALESCE(SUM(cm.expected_profit), 0) as total_profit,
          COALESCE(SUM(cm.transport_cost), 0) as total_transport_cost,
          COUNT(*) as total_transactions
        FROM confirmed_markets cm
        JOIN farmers f ON f.id = cm.farmer_id
-       WHERE f.user_id = $1 AND cm.status = 'completed' ${dateFilter}`,
+       WHERE f.user_id = ? AND cm.status = 'completed' ${dateFilter}`,
       params
     );
     
-    const summary = result.rows[0];
+    const summary = result[0][0];
     
     // Get profit history for chart
-    const historyResult = await db.query(
+    const historyResult = await db.execute(
       `SELECT 
          DATE(cm.confirmed_at) as date,
          SUM(cm.expected_profit - cm.transport_cost) as profit
        FROM confirmed_markets cm
        JOIN farmers f ON f.id = cm.farmer_id
-       WHERE f.user_id = $1 AND cm.status = 'completed' 
+       WHERE f.user_id = ? AND cm.status = 'completed' 
          ${historyInterval ? `AND cm.confirmed_at >= ${historyInterval}` : ''}
        GROUP BY DATE(cm.confirmed_at)
        ORDER BY date ASC`,
@@ -210,7 +209,7 @@ exports.getProfitSummary = async (req, res) => {
       totalTransportCost: parseFloat(summary.total_transport_cost),
       totalTransactions: parseInt(summary.total_transactions),
       netProfit: parseFloat(summary.total_profit) - parseFloat(summary.total_transport_cost),
-      history: historyResult.rows.map(row => ({
+      history: historyResult[0].map(row => ({
         date: row.date,
         profit: parseFloat(row.profit)
       }))

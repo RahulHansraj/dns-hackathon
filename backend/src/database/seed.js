@@ -1,13 +1,16 @@
-const { Pool } = require('pg');
+const mysql = require('mysql2/promise');
 require('dotenv').config();
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'farm_market',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'password',
-});
+async function getConnection() {
+  return await mysql.createConnection({
+    host: process.env.DB_HOST || 'localhost',
+    port: process.env.DB_PORT || 3306,
+    database: process.env.DB_NAME || 'farm_market',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || 'password',
+    ssl: { rejectUnauthorized: false }
+  });
+}
 
 // Mock data for demo
 const crops = [
@@ -57,33 +60,33 @@ const markets = [
 ];
 
 async function seedDatabase() {
-  const client = await pool.connect();
+  const connection = await getConnection();
   
   try {
     // Insert crops
     console.log('Inserting crops...');
     for (const crop of crops) {
-      await client.query(
-        'INSERT INTO crops (name, category, shelf_life_days) VALUES ($1, $2, $3) ON CONFLICT (name) DO NOTHING',
+      await connection.execute(
+        'INSERT IGNORE INTO crops (name, category, shelf_life_days) VALUES (?, ?, ?)',
         [crop.name, crop.category, crop.shelf_life_days]
       );
     }
-    console.log(`Inserted ${crops.length} crops`);
+    console.log(`✅ Inserted ${crops.length} crops`);
     
     // Insert markets
     console.log('Inserting markets...');
     for (const market of markets) {
-      await client.query(
-        'INSERT INTO markets (name, location_name, latitude, longitude) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+      await connection.execute(
+        'INSERT INTO markets (name, location_name, latitude, longitude) VALUES (?, ?, ?, ?)',
         [market.name, market.location_name, market.latitude, market.longitude]
       );
     }
-    console.log(`Inserted ${markets.length} markets`);
+    console.log(`✅ Inserted ${markets.length} markets`);
     
     // Generate price history for last 365 days
     console.log('Generating price history...');
-    const cropsResult = await client.query('SELECT id, name FROM crops');
-    const marketsResult = await client.query('SELECT id FROM markets');
+    const [cropsResult] = await connection.execute('SELECT id, name FROM crops');
+    const [marketsResult] = await connection.execute('SELECT id FROM markets');
     
     const basePrices = {
       'Tomato': 40, 'Potato': 25, 'Onion': 35, 'Carrot': 45, 'Cabbage': 30,
@@ -93,8 +96,8 @@ async function seedDatabase() {
       'Mango': 100, 'Orange': 60, 'Grapes': 80, 'Papaya': 45, 'Watermelon': 25
     };
     
-    for (const market of marketsResult.rows) {
-      for (const crop of cropsResult.rows) {
+    for (const market of marketsResult) {
+      for (const crop of cropsResult) {
         const basePrice = basePrices[crop.name] || 50;
         
         // Generate daily prices for last 365 days
@@ -106,21 +109,21 @@ async function seedDatabase() {
           const variation = (Math.random() - 0.5) * 0.6;
           const price = Math.max(basePrice * (1 + variation), 5).toFixed(2);
           
-          await client.query(
-            'INSERT INTO price_history (market_id, crop_id, price_per_kg, recorded_at) VALUES ($1, $2, $3, $4)',
+          await connection.execute(
+            'INSERT INTO price_history (market_id, crop_id, price_per_kg, recorded_at) VALUES (?, ?, ?, ?)',
             [market.id, crop.id, price, date]
           );
         }
       }
     }
-    console.log('Price history generated');
+    console.log('✅ Price history generated');
     
     // Generate market demands
     console.log('Generating market demands...');
-    for (const market of marketsResult.rows) {
+    for (const market of marketsResult) {
       // 3-5 random demands per market
       const numDemands = Math.floor(Math.random() * 3) + 3;
-      const shuffledCrops = [...cropsResult.rows].sort(() => Math.random() - 0.5);
+      const shuffledCrops = [...cropsResult].sort(() => Math.random() - 0.5);
       
       for (let i = 0; i < numDemands; i++) {
         const crop = shuffledCrops[i];
@@ -130,38 +133,38 @@ async function seedDatabase() {
         const validUntil = new Date();
         validUntil.setDate(validUntil.getDate() + validDays);
         
-        await client.query(
-          'INSERT INTO market_demands (market_id, crop_id, demand_price_per_kg, quantity_needed_kg, valid_until) VALUES ($1, $2, $3, $4, $5)',
+        await connection.execute(
+          'INSERT INTO market_demands (market_id, crop_id, demand_price_per_kg, quantity_needed_kg, valid_until) VALUES (?, ?, ?, ?, ?)',
           [market.id, crop.id, demandPrice, Math.floor(Math.random() * 500) + 100, validUntil]
         );
       }
     }
-    console.log('Market demands generated');
+    console.log('✅ Market demands generated');
     
     // Create a demo user
     console.log('Creating demo user...');
     const bcrypt = require('bcryptjs');
     const passwordHash = await bcrypt.hash('demo123', 10);
     
-    const userResult = await client.query(
-      'INSERT INTO users (full_name, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
+    const [userResult] = await connection.execute(
+      'INSERT INTO users (full_name, email, password_hash) VALUES (?, ?, ?)',
       ['Demo Farmer', 'demo@farm.com', passwordHash]
     );
     
-    await client.query(
-      'INSERT INTO farmers (user_id, location_name, latitude, longitude) VALUES ($1, $2, $3, $4)',
-      [userResult.rows[0].id, 'Baramati', 18.1515, 74.5774]
+    await connection.execute(
+      'INSERT INTO farmers (user_id, location_name, latitude, longitude) VALUES (?, ?, ?, ?)',
+      [userResult.insertId, 'Baramati', 18.1515, 74.5774]
     );
     
-    console.log('Demo user created (email: demo@farm.com, password: demo123)');
+    console.log('✅ Demo user created (email: demo@farm.com, password: demo123)');
     
-    console.log('Database seeded successfully!');
+    console.log('\n🎉 Database seeded successfully!');
     
   } catch (error) {
-    console.error('Error seeding database:', error);
+    console.error('❌ Error seeding database:', error);
+    throw error;
   } finally {
-    client.release();
-    await pool.end();
+    await connection.end();
   }
 }
 

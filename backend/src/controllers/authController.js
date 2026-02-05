@@ -1,10 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { OAuth2Client } = require('google-auth-library');
 const db = require('../database/db');
 const config = require('../config');
-
-const googleClient = new OAuth2Client(config.google.clientId);
 
 // Generate JWT token
 const generateToken = (user) => {
@@ -21,12 +18,12 @@ exports.signup = async (req, res) => {
     const { fullName, email, password } = req.body;
     
     // Check if user exists
-    const existingUser = await db.query(
-      'SELECT id FROM users WHERE email = $1',
+    const [existingUser] = await db.execute(
+      'SELECT id FROM users WHERE email = ?',
       [email]
     );
     
-    if (existingUser.rows.length > 0) {
+    if (existingUser.length > 0) {
       return res.status(400).json({ error: 'Email already registered' });
     }
     
@@ -34,18 +31,25 @@ exports.signup = async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     
     // Create user
-    const userResult = await db.query(
-      'INSERT INTO users (full_name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, full_name, email, theme_preference',
+    const [userResult] = await db.execute(
+      'INSERT INTO users (full_name, email, password_hash) VALUES (?, ?, ?)',
       [fullName, email, passwordHash]
     );
     
-    const user = userResult.rows[0];
+    const userId = userResult.insertId;
     
     // Create farmer profile
-    await db.query(
-      'INSERT INTO farmers (user_id) VALUES ($1)',
-      [user.id]
+    await db.execute(
+      'INSERT INTO farmers (user_id) VALUES (?)',
+      [userId]
     );
+    
+    // Get created user
+    const [users] = await db.execute(
+      'SELECT id, full_name, email, theme_preference FROM users WHERE id = ?',
+      [userId]
+    );
+    const user = users[0];
     
     const token = generateToken(user);
     
@@ -71,20 +75,20 @@ exports.login = async (req, res) => {
     const { email, password } = req.body;
     
     // Find user
-    const userResult = await db.query(
-      'SELECT id, full_name, email, password_hash, theme_preference FROM users WHERE email = $1',
+    const [userResult] = await db.execute(
+      'SELECT id, full_name, email, password_hash, theme_preference FROM users WHERE email = ?',
       [email]
     );
     
-    if (userResult.rows.length === 0) {
+    if (userResult.length === 0) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
     
-    const user = userResult.rows[0];
+    const user = userResult[0];
     
     // Check password
     if (!user.password_hash) {
-      return res.status(401).json({ error: 'Please use Google login for this account' });
+      return res.status(401).json({ error: 'Invalid email or password' });
     }
     
     const isValid = await bcrypt.compare(password, user.password_hash);
@@ -110,107 +114,25 @@ exports.login = async (req, res) => {
   }
 };
 
-// Google OAuth login/signup
-exports.googleAuth = async (req, res) => {
-  try {
-    const { credential, accessToken } = req.body;
-    
-    let googleId, email, name;
-    
-    if (credential) {
-      // Verify Google ID token
-      const ticket = await googleClient.verifyIdToken({
-        idToken: credential,
-        audience: config.google.clientId
-      });
-      const payload = ticket.getPayload();
-      googleId = payload.sub;
-      email = payload.email;
-      name = payload.name;
-    } else if (accessToken) {
-      // Use access token to get user info
-      const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      const userInfo = await response.json();
-      googleId = userInfo.sub;
-      email = userInfo.email;
-      name = userInfo.name;
-    } else {
-      return res.status(400).json({ error: 'No credential provided' });
-    }
-    
-    // Check if user exists
-    let userResult = await db.query(
-      'SELECT id, full_name, email, theme_preference FROM users WHERE email = $1 OR google_id = $2',
-      [email, googleId]
-    );
-    
-    let user;
-    let isNewUser = false;
-    
-    if (userResult.rows.length === 0) {
-      // Auto-signup new user
-      userResult = await db.query(
-        'INSERT INTO users (full_name, email, google_id) VALUES ($1, $2, $3) RETURNING id, full_name, email, theme_preference',
-        [name, email, googleId]
-      );
-      user = userResult.rows[0];
-      isNewUser = true;
-      
-      // Create farmer profile
-      await db.query(
-        'INSERT INTO farmers (user_id) VALUES ($1)',
-        [user.id]
-      );
-    } else {
-      user = userResult.rows[0];
-      
-      // Update google_id if not set
-      if (!user.google_id) {
-        await db.query(
-          'UPDATE users SET google_id = $1 WHERE id = $2',
-          [googleId, user.id]
-        );
-      }
-    }
-    
-    const token = generateToken(user);
-    
-    res.json({
-      message: isNewUser ? 'Signup successful' : 'Login successful',
-      token,
-      user: {
-        id: user.id,
-        fullName: user.full_name,
-        email: user.email,
-        themePreference: user.theme_preference
-      },
-      isNewUser
-    });
-  } catch (error) {
-    console.error('Google auth error:', error);
-    res.status(500).json({ error: 'Google authentication failed' });
-  }
-};
+
 
 // Get current user
 exports.me = async (req, res) => {
   try {
-    const userResult = await db.query(
+    const [userResult] = await db.execute(
       `SELECT u.id, u.full_name, u.email, u.theme_preference, 
               f.id as farmer_id, f.location_name, f.latitude, f.longitude
        FROM users u
        LEFT JOIN farmers f ON f.user_id = u.id
-       WHERE u.id = $1`,
+       WHERE u.id = ?`,
       [req.user.id]
     );
     
-    if (userResult.rows.length === 0) {
+    if (userResult.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    const user = userResult.rows[0];
+    const user = userResult[0];
     
     res.json({
       id: user.id,
@@ -239,8 +161,8 @@ exports.updateTheme = async (req, res) => {
       return res.status(400).json({ error: 'Invalid theme' });
     }
     
-    await db.query(
-      'UPDATE users SET theme_preference = $1, updated_at = NOW() WHERE id = $2',
+    await db.execute(
+      'UPDATE users SET theme_preference = ?, updated_at = NOW() WHERE id = ?',
       [theme, req.user.id]
     );
     

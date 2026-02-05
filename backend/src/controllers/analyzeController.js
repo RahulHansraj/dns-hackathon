@@ -44,13 +44,13 @@ exports.analyzeMarkets = async (req, res) => {
     
     if (!lat || !lon) {
       if (req.user) {
-        const farmerResult = await db.query(
-          'SELECT latitude, longitude FROM farmers WHERE user_id = $1',
+        const farmerResult = await db.execute(
+          'SELECT latitude, longitude FROM farmers WHERE user_id = ?',
           [req.user.id]
         );
-        if (farmerResult.rows.length > 0 && farmerResult.rows[0].latitude) {
-          lat = parseFloat(farmerResult.rows[0].latitude);
-          lon = parseFloat(farmerResult.rows[0].longitude);
+        if (farmerResult[0].length > 0 && farmerResult[0][0].latitude) {
+          lat = parseFloat(farmerResult[0][0].latitude);
+          lon = parseFloat(farmerResult[0][0].longitude);
         }
       }
     }
@@ -60,13 +60,13 @@ exports.analyzeMarkets = async (req, res) => {
     }
     
     // Get all active markets
-    const marketsResult = await db.query(
+    const marketsResult = await db.execute(
       'SELECT id, name, location_name, latitude, longitude FROM markets WHERE is_active = true'
     );
     
     // If no crops specified, return general market opportunities
     if (!crops || crops.length === 0) {
-      const opportunities = await db.query(
+      const opportunities = await db.execute(
         `SELECT md.id, md.demand_price_per_kg, md.quantity_needed_kg, md.valid_until,
                 m.id as market_id, m.name as market_name, m.location_name, m.latitude, m.longitude,
                 c.id as crop_id, c.name as crop_name
@@ -78,7 +78,7 @@ exports.analyzeMarkets = async (req, res) => {
          LIMIT 20`
       );
       
-      const results = opportunities.rows.map(opp => {
+      const results = opportunities[0].map(opp => {
         const distance = calculateDistance(lat, lon, parseFloat(opp.latitude), parseFloat(opp.longitude));
         return {
           marketId: opp.market_id,
@@ -105,16 +105,16 @@ exports.analyzeMarkets = async (req, res) => {
       const { cropId, weightKg } = crop;
       
       // Get crop details
-      const cropResult = await db.query(
-        'SELECT id, name, shelf_life_days FROM crops WHERE id = $1',
+      const cropResult = await db.execute(
+        'SELECT id, name, shelf_life_days FROM crops WHERE id = ?',
         [cropId]
       );
       
-      if (cropResult.rows.length === 0) continue;
+      if (cropResult[0].length === 0) continue;
       
-      const cropInfo = cropResult.rows[0];
+      const cropInfo = cropResult[0][0];
       
-      for (const market of marketsResult.rows) {
+      for (const market of marketsResult[0]) {
         const marketLat = parseFloat(market.latitude);
         const marketLon = parseFloat(market.longitude);
         
@@ -122,15 +122,15 @@ exports.analyzeMarkets = async (req, res) => {
         const distance = calculateDistance(lat, lon, marketLat, marketLon);
         
         // Get current price for this crop at this market
-        const priceResult = await db.query(
+        const priceResult = await db.execute(
           `SELECT price_per_kg FROM price_history 
-           WHERE market_id = $1 AND crop_id = $2 
+           WHERE market_id = ? AND crop_id = ? 
            ORDER BY recorded_at DESC LIMIT 1`,
           [market.id, cropId]
         );
         
-        const currentPrice = priceResult.rows.length > 0 
-          ? parseFloat(priceResult.rows[0].price_per_kg) 
+        const currentPrice = priceResult[0].length > 0 
+          ? parseFloat(priceResult[0][0].price_per_kg) 
           : 50; // Default price
         
         // Calculate costs and profit
@@ -182,29 +182,28 @@ exports.confirmMarket = async (req, res) => {
     const { marketId, cropId, weightKg, expectedProfit, transportCost, spoilageRisk } = req.body;
     
     // Get farmer id
-    const farmerResult = await db.query(
-      'SELECT id FROM farmers WHERE user_id = $1',
+    const farmerResult = await db.execute(
+      'SELECT id FROM farmers WHERE user_id = ?',
       [req.user.id]
     );
     
-    if (farmerResult.rows.length === 0) {
+    if (farmerResult[0].length === 0) {
       return res.status(404).json({ error: 'Farmer profile not found' });
     }
     
-    const farmerId = farmerResult.rows[0].id;
+    const farmerId = farmerResult[0][0].id;
     
     // Create confirmed market entry
-    const result = await db.query(
+    const result = await db.execute(
       `INSERT INTO confirmed_markets 
        (farmer_id, market_id, crop_id, weight_kg, expected_profit, transport_cost, spoilage_risk)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id`,
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [farmerId, marketId, cropId, weightKg, expectedProfit, transportCost, spoilageRisk]
     );
     
     res.status(201).json({
       message: 'Market confirmed',
-      id: result.rows[0].id
+      id: result[0].insertId
     });
   } catch (error) {
     console.error('Confirm market error:', error);
@@ -215,7 +214,7 @@ exports.confirmMarket = async (req, res) => {
 // Get confirmed markets
 exports.getConfirmedMarkets = async (req, res) => {
   try {
-    const result = await db.query(
+    const result = await db.execute(
       `SELECT cm.id, cm.weight_kg, cm.expected_profit, cm.transport_cost, 
               cm.spoilage_risk, cm.status, cm.confirmed_at,
               m.id as market_id, m.name as market_name, m.location_name, 
@@ -226,12 +225,12 @@ exports.getConfirmedMarkets = async (req, res) => {
        JOIN markets m ON m.id = cm.market_id
        JOIN crops c ON c.id = cm.crop_id
        JOIN farmers f ON f.id = cm.farmer_id
-       WHERE f.user_id = $1
+       WHERE f.user_id = ?
        ORDER BY cm.confirmed_at DESC`,
       [req.user.id]
     );
     
-    res.json(result.rows.map(row => ({
+    res.json(result[0].map(row => ({
       id: row.id,
       marketId: row.market_id,
       marketName: row.market_name,
@@ -264,11 +263,11 @@ exports.completeTransaction = async (req, res) => {
     const { id } = req.params;
     const { actualProfit } = req.body;
     
-    await db.query(
+    await db.execute(
       `UPDATE confirmed_markets 
        SET status = 'completed', completed_at = NOW(),
-           expected_profit = COALESCE($1, expected_profit)
-       WHERE id = $2 AND farmer_id IN (SELECT id FROM farmers WHERE user_id = $3)`,
+           expected_profit = COALESCE(?, expected_profit)
+       WHERE id = ? AND farmer_id IN (SELECT id FROM farmers WHERE user_id = ?)`,
       [actualProfit, id, req.user.id]
     );
     
@@ -284,9 +283,9 @@ exports.cancelConfirmedMarket = async (req, res) => {
   try {
     const { id } = req.params;
     
-    await db.query(
+    await db.execute(
       `DELETE FROM confirmed_markets 
-       WHERE id = $1 AND farmer_id IN (SELECT id FROM farmers WHERE user_id = $2)`,
+       WHERE id = ? AND farmer_id IN (SELECT id FROM farmers WHERE user_id = ?)`,
       [id, req.user.id]
     );
     

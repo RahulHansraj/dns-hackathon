@@ -3,14 +3,14 @@ const db = require('../database/db');
 // Get all markets
 exports.getMarkets = async (req, res) => {
   try {
-    const result = await db.query(
+    const result = await db.execute(
       `SELECT id, name, location_name, latitude, longitude
        FROM markets
        WHERE is_active = true
        ORDER BY name`
     );
     
-    res.json(result.rows.map(row => ({
+    res.json(result[0].map(row => ({
       id: row.id,
       name: row.name,
       locationName: row.location_name,
@@ -33,31 +33,31 @@ exports.getTopMarkets = async (req, res) => {
     
     if (req.user) {
       // Get farmer's historical data
-      const farmerResult = await db.query(
-        'SELECT id FROM farmers WHERE user_id = $1',
+      const farmerResult = await db.execute(
+        'SELECT id FROM farmers WHERE user_id = ?',
         [req.user.id]
       );
       
-      if (farmerResult.rows.length > 0) {
-        const farmerId = farmerResult.rows[0].id;
+      if (farmerResult[0].length > 0) {
+        const farmerId = farmerResult[0][0].id;
         
         // Check if farmer has historical data
-        const historyCheck = await db.query(
-          'SELECT COUNT(*) as count FROM confirmed_markets WHERE farmer_id = $1',
+        const historyCheck = await db.execute(
+          'SELECT COUNT(*) as count FROM confirmed_markets WHERE farmer_id = ?',
           [farmerId]
         );
         
-        if (parseInt(historyCheck.rows[0].count) > 0) {
+        if (parseInt(historyCheck[0][0].count) > 0) {
           // Rank based on farmer's historical performance
           query = `
             SELECT m.id, m.name, m.location_name, m.latitude, m.longitude,
                    AVG(cm.expected_profit) as avg_profit,
                    COUNT(cm.id) as transaction_count
             FROM markets m
-            LEFT JOIN confirmed_markets cm ON cm.market_id = m.id AND cm.farmer_id = $1
+            LEFT JOIN confirmed_markets cm ON cm.market_id = m.id AND cm.farmer_id = ?
             WHERE m.is_active = true
             GROUP BY m.id
-            ORDER BY avg_profit DESC NULLS LAST, transaction_count DESC
+            ORDER BY avg_profit DESC, transaction_count DESC
             LIMIT 10
           `;
           params = [farmerId];
@@ -73,19 +73,19 @@ exports.getTopMarkets = async (req, res) => {
                AVG(ph.price_per_kg) as avg_price
         FROM markets m
         LEFT JOIN price_history ph ON ph.market_id = m.id 
-          AND ph.recorded_at >= NOW() - INTERVAL '30 days'
-          ${cropId ? 'AND ph.crop_id = $1' : ''}
+          AND ph.recorded_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+          ${cropId ? 'AND ph.crop_id = ?' : ''}
         WHERE m.is_active = true
         GROUP BY m.id
-        ORDER BY max_price DESC NULLS LAST
+        ORDER BY max_price DESC
         LIMIT 10
       `;
       params = cropId ? [cropId] : [];
     }
     
-    const result = await db.query(query, params);
+    const result = await db.execute(query, params);
     
-    res.json(result.rows.map((row, index) => ({
+    res.json(result[0].map((row, index) => ({
       rank: index + 1,
       id: row.id,
       name: row.name,
@@ -111,16 +111,16 @@ exports.getPriceHistory = async (req, res) => {
     let dateFilter = '';
     switch (period) {
       case '1d':
-        dateFilter = "AND recorded_at >= NOW() - INTERVAL '1 day'";
+        dateFilter = "AND recorded_at >= DATE_SUB(NOW(), INTERVAL 1 DAY)";
         break;
       case '1m':
-        dateFilter = "AND recorded_at >= NOW() - INTERVAL '1 month'";
+        dateFilter = "AND recorded_at >= DATE_SUB(NOW(), INTERVAL 1 MONTH)";
         break;
       case '5m':
-        dateFilter = "AND recorded_at >= NOW() - INTERVAL '5 months'";
+        dateFilter = "AND recorded_at >= DATE_SUB(NOW(), INTERVAL 5 MONTH)";
         break;
       case '1y':
-        dateFilter = "AND recorded_at >= NOW() - INTERVAL '1 year'";
+        dateFilter = "AND recorded_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)";
         break;
       case 'max':
       default:
@@ -130,20 +130,20 @@ exports.getPriceHistory = async (req, res) => {
     const params = [marketId];
     let cropFilter = '';
     if (cropId) {
-      cropFilter = 'AND crop_id = $2';
+      cropFilter = 'AND crop_id = ?';
       params.push(cropId);
     }
     
-    const result = await db.query(
+    const result = await db.execute(
       `SELECT price_per_kg, recorded_at, crop_id
        FROM price_history
-       WHERE market_id = $1 ${cropFilter} ${dateFilter}
+       WHERE market_id = ? ${cropFilter} ${dateFilter}
        ORDER BY recorded_at ASC`,
       params
     );
     
     // Calculate stats
-    const prices = result.rows.map(r => parseFloat(r.price_per_kg));
+    const prices = result[0].map(r => parseFloat(r.price_per_kg));
     const stats = {
       highest: prices.length ? Math.max(...prices) : 0,
       lowest: prices.length ? Math.min(...prices) : 0,
@@ -151,7 +151,7 @@ exports.getPriceHistory = async (req, res) => {
     };
     
     res.json({
-      history: result.rows.map(row => ({
+      history: result[0].map(row => ({
         price: parseFloat(row.price_per_kg),
         date: row.recorded_at,
         cropId: row.crop_id
@@ -167,7 +167,7 @@ exports.getPriceHistory = async (req, res) => {
 // Get market demands
 exports.getMarketDemands = async (req, res) => {
   try {
-    const result = await db.query(
+    const result = await db.execute(
       `SELECT md.id, md.demand_price_per_kg, md.quantity_needed_kg, 
               md.valid_from, md.valid_until,
               m.id as market_id, m.name as market_name, m.location_name,
@@ -179,7 +179,7 @@ exports.getMarketDemands = async (req, res) => {
        ORDER BY md.demand_price_per_kg DESC`
     );
     
-    res.json(result.rows.map(row => ({
+    res.json(result[0].map(row => ({
       id: row.id,
       marketId: row.market_id,
       marketName: row.market_name,
@@ -202,25 +202,25 @@ exports.getMarketDetails = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const result = await db.query(
+    const result = await db.execute(
       `SELECT id, name, location_name, latitude, longitude
-       FROM markets WHERE id = $1`,
+       FROM markets WHERE id = ?`,
       [id]
     );
     
-    if (result.rows.length === 0) {
+    if (result[0].length === 0) {
       return res.status(404).json({ error: 'Market not found' });
     }
     
-    const market = result.rows[0];
+    const market = result[0][0];
     
     // Get current demands
-    const demands = await db.query(
+    const demands = await db.execute(
       `SELECT md.id, md.demand_price_per_kg, md.quantity_needed_kg, 
               md.valid_until, c.name as crop_name
        FROM market_demands md
        JOIN crops c ON c.id = md.crop_id
-       WHERE md.market_id = $1 AND md.is_active = true AND md.valid_until > NOW()`,
+       WHERE md.market_id = ? AND md.is_active = true AND md.valid_until > NOW()`,
       [id]
     );
     
@@ -230,7 +230,7 @@ exports.getMarketDetails = async (req, res) => {
       locationName: market.location_name,
       latitude: parseFloat(market.latitude),
       longitude: parseFloat(market.longitude),
-      demands: demands.rows.map(d => ({
+      demands: demands[0].map(d => ({
         id: d.id,
         cropName: d.crop_name,
         pricePerKg: parseFloat(d.demand_price_per_kg),

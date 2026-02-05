@@ -17,9 +17,6 @@ router.post('/login', [
   body('password').notEmpty().withMessage('Password is required')
 ], authController.login);
 
-// Google OAuth
-router.post('/google', authController.googleAuth);
-
 // Get current user
 router.get('/me', authMiddleware, authController.me);
 
